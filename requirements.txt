@@ -1,0 +1,10 @@
+customtkinter
+cryptography
+requests
+networkx
+pyvis
+streamlit
+pyautogui
+Pillow
+pandas
+plotly

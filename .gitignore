@@ -1,0 +1,30 @@
+# Aithra-Nexus Intelligence Vault
+# SECURITY WARNING: DO NOT REMOVE THESE EXCLUSIONS
+
+# Sensitive Data (Zero-Knowledge Core)
+aithra_nexus.db
+salt.bin
+
+# Backups & Archives
+*.zip
+*.tar.gz
+vault_backup_*/
+
+# Caches & Visuals
+__pycache__/
+*.json
+*.html
+*.png
+*.jpg
+temp_*/
+
+# Environment
+.venv/
+venv/
+.env
+.python-version
+
+# IDEs
+.vscode/
+.idea/
+*.swp
