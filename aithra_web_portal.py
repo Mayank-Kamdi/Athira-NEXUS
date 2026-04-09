@@ -70,6 +70,9 @@ else:
                 net.add_edge(e["source"], e["target"])
             net.save_graph("web_graph.html")
             st.components.v1.html(open("web_graph.html", 'r').read(), height=720)
+            
+            with open("web_graph.html", "rb") as f:
+                st.download_button("DOWNLOAD_HIGH_RES_MAP (HTML)", f, file_name=f"vault_map_{st.session_state.username}.html")
         else:
             st.info("NO_NODES_DETECTED. INITIALIZE VAULT FROM DESKTOP TERMINAL.")
 
@@ -107,6 +110,12 @@ else:
                 with st.expander(f"[{r['type'].upper()}] {r['title']}"):
                     st.code(r['content'])
                     st.write(f"ID: {r['id']}")
+            
+            st.markdown("---")
+            st.subheader("CONCEPTUAL_SEMANTIC_MATCHES")
+            semantic_matches = nexus.semantic_search(q, limit=3)
+            for sid, stitle, sim in semantic_matches:
+                st.write(f"💡 **Possbile Relation**: {stitle} (Match: {sim:.2f})")
 
     st.sidebar.markdown("---")
     st.sidebar.markdown(f"**VAULT_STATUS**: LOCKED_SESSION")

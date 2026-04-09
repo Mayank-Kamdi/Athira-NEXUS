@@ -73,6 +73,7 @@ class DatabaseManager:
         cursor.execute("CREATE TABLE IF NOT EXISTS nodes (id INTEGER PRIMARY KEY AUTOINCREMENT, content BLOB, type TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
         cursor.execute("CREATE TABLE IF NOT EXISTS node_versions (id INTEGER PRIMARY KEY AUTOINCREMENT, node_id INTEGER, content BLOB, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
         cursor.execute("CREATE TABLE IF NOT EXISTS edges (id INTEGER PRIMARY KEY AUTOINCREMENT, source_id INTEGER, target_id INTEGER, relationship_type TEXT, reasoning TEXT, status TEXT DEFAULT 'APPROVED', user_id INTEGER)")
+        cursor.execute("CREATE TABLE IF NOT EXISTS embeddings (node_id INTEGER PRIMARY KEY, vector BLOB)")
         
         # Schema Migrations (Add user_id if missing)
         self._migrate_schema()
@@ -143,9 +144,49 @@ class AithraNexus:
         node_id = cursor.lastrowid
         self.db.conn.execute("INSERT INTO fts_nodes (title, node_id, user_id) VALUES (?, ?, ?)", (title, node_id, self.user_id))
         self.db.conn.commit()
+        
+        # Async Embedding Generation
+        threading.Thread(target=self._generate_embedding, args=(node_id, content)).start()
+        
         self.liaison.queue.put(node_id)
         self.refresh_intent()
         return node_id
+
+    def _generate_embedding(self, node_id, content):
+        """Generates semantic vector via Ollama."""
+        try:
+            res = requests.post("http://localhost:11434/api/embeddings", json={
+                "model": "nomic-embed-text",
+                "prompt": content
+            }).json()
+            vector = res['embedding']
+            import numpy as np
+            vec_blob = np.array(vector, dtype=np.float32).tobytes()
+            self.db.conn.execute("INSERT OR REPLACE INTO embeddings (node_id, vector) VALUES (?, ?)", (node_id, vec_blob))
+            self.db.conn.commit()
+        except: pass
+
+    def semantic_search(self, query, limit=5):
+        """Finds conceptually similar nodes using cosine similarity."""
+        try:
+            res = requests.post("http://localhost:11434/api/embeddings", json={
+                "model": "nomic-embed-text", 
+                "prompt": query
+            }).json()
+            query_vec = res['embedding']
+            
+            import numpy as np
+            nodes = self.db.conn.execute("SELECT e.node_id, e.vector, f.title FROM embeddings e JOIN fts_nodes f ON e.node_id=f.node_id WHERE f.user_id=?", (self.user_id,)).fetchall()
+            
+            scores = []
+            for n in nodes:
+                vec = np.frombuffer(n['vector'], dtype=np.float32)
+                sim = np.dot(query_vec, vec) / (np.linalg.norm(query_vec) * np.linalg.norm(vec))
+                scores.append((n['node_id'], n['title'], sim))
+            
+            scores.sort(key=lambda x: x[2], reverse=True)
+            return scores[:limit]
+        except: return []
 
     def get_node(self, node_id):
         res = self.db.conn.execute("SELECT n.*, f.title FROM nodes n JOIN fts_nodes f ON n.id=f.node_id WHERE n.id=? AND n.user_id=?", (node_id, self.user_id)).fetchone()

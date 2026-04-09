@@ -20,6 +20,12 @@ FONT_CONSOLAS_SM = ("Consolas", 11)
 FONT_CONSOLAS_MD = ("Consolas", 14)
 FONT_CONSOLAS_LG = ("Consolas", 24, "bold")
 FONT_CONSOLAS_XL = ("Consolas", 48, "bold")
+# Try to use a more elite font if possible
+FONT_MONO = "Consolas" 
+
+import winsound
+def play_click():
+    threading.Thread(target=lambda: winsound.Beep(800, 10), daemon=True).start()
 
 class AithraGUI(ctk.CTk):
     def __init__(self):
@@ -170,14 +176,18 @@ class AithraGUI(ctk.CTk):
                                       fg_color="transparent", border_width=1, border_color=COLOR_BORDER,
                                       text_color=COLOR_BORDER)
         self.temp_btn.pack(fill="x", padx=25, pady=10)
-
-        ctk.CTkLabel(self.hud, text="[ RELEVANT_NODES ]", font=FONT_CONSOLAS_SM, text_color=COLOR_BORDER).pack(pady=(20, 5))
         
+        ctk.CTkLabel(self.hud, text="[ RELEVANT_NODES ]", font=FONT_CONSOLAS_SM, text_color=COLOR_BORDER).pack(pady=(20, 5))
         self.link_list = tk.Listbox(self.hud, bg=COLOR_SURFACE, fg=COLOR_ACCENT_BLUE, 
                                     borderwidth=0, highlightthickness=0, font=("Consolas", 11),
                                     selectbackground=COLOR_ACCENT_GREEN, selectforeground="black")
         self.link_list.pack(fill="both", expand=True, padx=25, pady=5)
         self.link_list.bind("<<ListboxSelect>>", self.jump_node)
+
+        ctk.CTkLabel(self.hud, text="[ CONTEXT_SUGGESTIONS ]", font=FONT_CONSOLAS_SM, text_color=COLOR_ACCENT_GREEN).pack(pady=(20, 5))
+        self.context_list = tk.Listbox(self.hud, height=4, bg=COLOR_BG, fg=COLOR_ACCENT_GREEN, font=FONT_CONSOLAS_SM, borderwidth=0)
+        self.context_list.pack(fill="x", padx=25)
+        self.context_list.bind("<<ListboxSelect>>", self.jump_context)
 
         # Agent Reasoning Log
         ctk.CTkLabel(self.hud, text=">> AGENT_GOVERNANCE", font=FONT_CONSOLAS_SM, text_color=COLOR_ACCENT_BLUE).pack(pady=(15, 5), padx=25, anchor="w")
@@ -207,6 +217,7 @@ class AithraGUI(ctk.CTk):
         if sel: self.load_node(self.nodes_data[sel[0]]['id'])
 
     def load_node(self, node_id):
+        play_click()
         self.current_node_id = node_id
         try:
             node = self.nexus.get_node(node_id)
@@ -215,9 +226,29 @@ class AithraGUI(ctk.CTk):
             self.text_editor.delete("1.0", tk.END)
             self.text_editor.insert("1.0", node['content'])
             self.refresh_links(node_id)
+            self.refresh_context(node['content'])
         except Exception as e:
             self.text_editor.delete("1.0", tk.END)
             self.text_editor.insert("1.0", f"--- [ DECRYPTION_LOCKED ] ---\n\n{str(e)}\n\nReason: The Master Key in this session cannot unlock this specific node segment. It may have been encrypted with a different Salt or a legacy password.")
+
+    def refresh_context(self, content):
+        """Finds semantic matches for the current buffer context."""
+        def _run():
+            matches = self.nexus.semantic_search(content[:300], limit=4)
+            self.after(0, lambda: self._update_context_list(matches))
+        threading.Thread(target=_run).start()
+
+    def _update_context_list(self, matches):
+        self.context_list.delete(0, tk.END)
+        self.context_data = matches
+        for m in matches:
+            if m[0] != self.current_node_id:
+                self.context_list.insert(tk.END, f" 💡 Suggestion: {m[1].upper()}")
+
+    def jump_context(self, e):
+        sel = self.context_list.curselection()
+        if sel:
+            self.load_node(self.context_data[sel[0]][0])
 
     def toggle_temp(self):
         if self.nexus.liaison.temperature == "low":
