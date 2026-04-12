@@ -140,9 +140,12 @@ class AithraNexus:
 
     def add_node(self, title, content, ntype="note"):
         cursor = self.db.conn.cursor()
-        cursor.execute("INSERT INTO nodes (user_id, content, type) VALUES (?, ?, ?)", (self.user_id, self.security.encrypt(content), ntype))
+        # Explicitly naming columns to avoid index mismatch
+        cursor.execute("INSERT INTO nodes (content, type, user_id) VALUES (?, ?, ?)", 
+                       (self.security.encrypt(content), ntype, self.user_id))
         node_id = cursor.lastrowid
-        self.db.conn.execute("INSERT INTO fts_nodes (title, node_id, user_id) VALUES (?, ?, ?)", (title, node_id, self.user_id))
+        self.db.conn.execute("INSERT INTO fts_nodes (title, node_id, user_id) VALUES (?, ?, ?)", 
+                             (title, node_id, self.user_id))
         self.db.conn.commit()
         
         # Async Embedding Generation
@@ -158,7 +161,7 @@ class AithraNexus:
             res = requests.post("http://localhost:11434/api/embeddings", json={
                 "model": "nomic-embed-text",
                 "prompt": content
-            }).json()
+            }, timeout=3).json()
             vector = res['embedding']
             import numpy as np
             vec_blob = np.array(vector, dtype=np.float32).tobytes()
@@ -172,7 +175,7 @@ class AithraNexus:
             res = requests.post("http://localhost:11434/api/embeddings", json={
                 "model": "nomic-embed-text", 
                 "prompt": query
-            }).json()
+            }, timeout=3).json()
             query_vec = res['embedding']
             
             import numpy as np
@@ -217,7 +220,7 @@ class AithraNexus:
                 "prompt": prompt, 
                 "images": [img_b64],
                 "stream": False
-            }).json()
+            }, timeout=15).json()
             analysis = res.get('response', 'Visual data capture failed.')
             return self.add_node(f"SCREEN_GAZE_{datetime.now().strftime('%H%M%S')}", analysis, "vision")
         except: return None
@@ -240,7 +243,7 @@ class AithraNexus:
         if not node: return
         prompt = f"Refine the following knowledge node content to be more professional, concise, and insightful while maintaining all specific data. Content: {node['content']}"
         try:
-            res = requests.post("http://localhost:11434/api/generate", json={"model": "mistral", "prompt": prompt, "stream": False}).json()
+            res = requests.post("http://localhost:11434/api/generate", json={"model": "mistral", "prompt": prompt, "stream": False}, timeout=10).json()
             reflection = res.get('response', 'AI_REFINEMENT_FAILED')
             self.update_node(node_id, node['title'], reflection)
         except: pass
@@ -251,17 +254,25 @@ class AithraNexus:
         titles = [r['title'] for r in recent]
         prompt = f"Given these note titles: {titles}. What is the primary INTENT mode? Respond with ONE WORD (e.g. STARTUP, CODING, FITNESS, PROJECT_ZERO)."
         try:
-            res = requests.post("http://localhost:11434/api/generate", json={"model": "mistral", "prompt": prompt, "stream": False}).json()
+            res = requests.post("http://localhost:11434/api/generate", json={"model": "mistral", "prompt": prompt, "stream": False}, timeout=5).json()
             self.current_intent = res.get('response', 'NEUTRAL').strip().upper()
         except: self.current_intent = "NEUTRAL"
 
     def search_vault(self, query):
-        matches = self.db.conn.execute("SELECT node_id, title FROM fts_nodes WHERE user_id = ? AND title MATCH ?", (self.user_id, f"{query}*",)).fetchall()
+        # Escaping special characters for FTS5
+        clean_query = query.replace('"', '""')
+        matches = self.db.conn.execute("SELECT node_id, title FROM fts_nodes WHERE user_id = ? AND title MATCH ?", (self.user_id, f'"{clean_query}"*',)).fetchall()
         results = []
         for match in matches:
-            node_data = self.db.conn.execute("SELECT * FROM nodes WHERE id=? AND user_id=?", (match['node_id'], self.user_id)).fetchone()
+            node_data = self.db.conn.execute("SELECT content, type FROM nodes WHERE id=? AND user_id=?", (match['node_id'], self.user_id)).fetchone()
             if node_data:
-                try: results.append({"id": match['node_id'], "title": match['title'], "type": node_data['type'], "content": self.security.decrypt(node_data['content'])})
+                try: 
+                    results.append({
+                        "id": match['node_id'], 
+                        "title": match['title'], 
+                        "type": node_data['type'], 
+                        "content": self.security.decrypt(node_data['content'])
+                    })
                 except: pass
         return results
 
@@ -271,8 +282,11 @@ class AithraNexus:
         return [dict(n) for n in nodes], [dict(e) for e in edges]
 
     def link_nodes(self, id1, id2, rel="related", reasoning=None, status="APPROVED"):
-        self.db.conn.execute("INSERT OR IGNORE INTO edges (source_id, target_id, user_id, relationship_type, reasoning, status) VALUES (?, ?, ?, ?, ?, ?)", 
-                             (id1, id2, self.user_id, rel, reasoning, status))
+        # Explicit column naming to ensure data lands in correct slots
+        self.db.conn.execute("""
+            INSERT OR IGNORE INTO edges (source_id, target_id, user_id, relationship_type, reasoning, status) 
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (id1, id2, self.user_id, rel, reasoning, status))
         self.db.conn.commit()
 
 import queue
@@ -322,7 +336,7 @@ class LiaisonAgent(threading.Thread):
                 If connected, respond ONLY with: YES | [Short 5-word Reason]
                 If not, respond ONLY with: NO"""
                 
-                response = requests.post("http://localhost:11434/api/generate", json={"model": "mistral", "prompt": prompt, "stream": False}).json()
+                response = requests.post("http://localhost:11434/api/generate", json={"model": "mistral", "prompt": prompt, "stream": False}, timeout=5).json()
                 text = response.get('response', '').strip()
                 
                 if text.upper().startswith("YES"):

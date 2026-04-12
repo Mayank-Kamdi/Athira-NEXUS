@@ -202,15 +202,24 @@ class AithraGUI(ctk.CTk):
         self.refresh_nodes()
 
     def launch_portal(self):
-        os.system(f'start cmd /k "python -m streamlit run aithra_web_portal.py"')
+        # Use the verified venv path for reliability
+        venv_st = os.path.join(".venv", "Scripts", "streamlit.exe")
+        os.system(f'start cmd /k "{venv_st} run aithra_web_portal.py"')
         messagebox.showinfo("PORTAL", "Web Link Active at http://localhost:8501")
 
     def refresh_nodes(self):
         q = self.search_var.get()
         self.node_list.delete(0, tk.END)
-        if q: self.nodes_data = self.nexus.db.conn.execute("SELECT n.id, n.type, f.title FROM nodes n JOIN fts_nodes f ON n.id = f.node_id WHERE n.user_id=? AND f.title MATCH ?", (self.nexus.user_id, f"{q}*",)).fetchall()
-        else: self.nodes_data = self.nexus.db.conn.execute("SELECT n.id, n.type, f.title FROM nodes n JOIN fts_nodes f ON n.id = f.node_id WHERE n.user_id=?", (self.nexus.user_id,)).fetchall()
-        for n in self.nodes_data: self.node_list.insert(tk.END, f" ◈ {n['title'].upper()}")
+        # Using the core search method for consistency
+        if q:
+            results = self.nexus.search_vault(q)
+            self.nodes_data = [{"id": r['id'], "type": r['type'], "title": r['title']} for r in results]
+        else:
+            data = self.nexus.db.conn.execute("SELECT n.id, n.type, f.title FROM nodes n JOIN fts_nodes f ON n.id = f.node_id WHERE n.user_id=?", (self.nexus.user_id,)).fetchall()
+            self.nodes_data = [dict(n) for n in data]
+            
+        for n in self.nodes_data: 
+            self.node_list.insert(tk.END, f" ◈ {n['title'].upper()}")
 
     def on_node_select(self, e):
         sel = self.node_list.curselection()
