@@ -163,6 +163,10 @@ class AithraGUI(ctk.CTk):
                       fg_color="#10141b", border_width=1, border_color=COLOR_ACCENT_BLUE,
                       text_color=COLOR_ACCENT_BLUE, hover_color="#001a33").pack(fill="x", padx=25, pady=10)
         
+        ctk.CTkButton(self.hud, text="ACCESS_CLOUD_PORTAL", command=self.open_cloud_portal, height=45,
+                      fg_color="#10141b", border_width=1, border_color="#ff00ff",
+                      text_color="#ff00ff", hover_color="#330033").pack(fill="x", padx=25, pady=10)
+        
         ctk.CTkButton(self.hud, text="AI_REFINEMENT", command=self.refine_node, height=45,
                         fg_color="#10141b", border_width=1, border_color=COLOR_ACCENT_GREEN,
                         text_color=COLOR_ACCENT_GREEN, hover_color="#001a11").pack(fill="x", padx=25, pady=10)
@@ -205,7 +209,10 @@ class AithraGUI(ctk.CTk):
         # Use the verified venv path for reliability
         venv_st = os.path.join(".venv", "Scripts", "streamlit.exe")
         os.system(f'start cmd /k "{venv_st} run aithra_web_portal.py"')
-        messagebox.showinfo("PORTAL", "Web Link Active at http://localhost:8501")
+        messagebox.showinfo("PORTAL", "LOCAL SERVER STARTING...\nAccess at: http://localhost:8501\n\nEnsure Ollama is running for AI features.")
+
+    def open_cloud_portal(self):
+        webbrowser.open("https://athira-nexus-da22zb2z9hyrut4nfadisj.streamlit.app/")
 
     def refresh_nodes(self):
         q = self.search_var.get()

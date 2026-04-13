@@ -123,19 +123,19 @@ if not st.session_state.authenticated:
             key = st.text_input("MASTER_KEY (Password)", type="password")
             
             if st.button("INITIALIZE_SESSION"):
-                res = auth.login(user, key)
-                if res["status"] == "success":
-                    try:
-                        nexus = AithraNexus("demo_user", key) # Using demo for local link
-                        st.session_state.nexus = nexus
-                        st.session_state.username = user
-                        st.session_state.authenticated = True
-                        track_event(user, "LOGIN_SUCCESS")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"VAULT_DECRYPTION_FAILED: {e}")
-                else:
-                    st.error(res["message"])
+                # Use actual user identity instead of mock admin
+                try:
+                    # Initialize AithraNexus directly - this validates the password against the vault
+                    nexus = AithraNexus(user, key)
+                    st.session_state.nexus = nexus
+                    st.session_state.username = user
+                    st.session_state.authenticated = True
+                    track_event(user, "LOGIN_SUCCESS")
+                    st.rerun()
+                except ValueError as ve:
+                    st.error(f"AUTHENTICATION_DENIED: {ve}")
+                except Exception as e:
+                    st.error(f"SYSTEM_ERROR: {e}")
             
             st.markdown("---")
             if st.button("LOGIN_WITH_GOOGLE"):
@@ -147,10 +147,17 @@ if not st.session_state.authenticated:
             confirm_key = st.text_input("CONFIRM_MASTER_KEY", type="password")
             
             if st.button("CREATE_IDENTITY"):
-                if new_key == confirm_key:
-                    res = auth.sign_up(new_user, new_key)
-                    st.success(f"{res['message']}: Please verify {new_user}")
-                    track_event(new_user, "SIGNUP_ATTEMPT")
+                if not new_user or not new_key:
+                    st.error("REQUIRED_FIELDS_MISSING")
+                elif new_key == confirm_key:
+                    try:
+                        # Creating AithraNexus instance for a new user initializes their record
+                        nexus = AithraNexus(new_user, new_key)
+                        st.success(f"IDENTITY_CREATED: Vault for {new_user} is ready.")
+                        track_event(new_user, "SIGNUP_SUCCESS")
+                        st.info("Please switch to LOGIN mode to enter your vault.")
+                    except Exception as e:
+                        st.error(f"REGISTRATION_FAILED: {e}")
                 else:
                     st.error("KEY_MISMATCH: Passwords do not match.")
 
